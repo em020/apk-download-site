@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>{{APP_NAME}} · Android 下载</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;color:#16314e;background:#e8f0ff;line-height:1.6}
+*{box-sizing:border-box}body{margin:0}header{background:#134d9a;color:white}.app-nav{max-width:808px;margin:auto;padding:0 24px;display:flex;gap:32px;overflow-x:auto;scrollbar-width:none}.app-nav::-webkit-scrollbar{display:none}.app-nav a{position:relative;display:block;flex:none;padding:20px 0;color:#a9c7ed;font-size:18px;font-weight:600;text-decoration:none;white-space:nowrap}.app-nav a[aria-current="page"]{color:#fff;font-weight:700}.app-nav a[aria-current="page"]:after{content:"";position:absolute;bottom:10px;left:0;right:0;height:3px;border-radius:2px;background:#fff}
+main{max-width:808px;margin:auto;padding:28px 24px 48px}.hero,.release{background:white;border:1px solid #d5e2f7;border-radius:18px;padding:26px}.identity{text-align:center}.app-icon{display:block;width:88px;height:88px;margin:0 auto;border-radius:20px}.icon-fallback{background:#134d9a;color:white;display:grid;place-items:center;font-size:32px;font-weight:700}h1{font-size:32px;line-height:1.2;margin:18px 0 14px;overflow-wrap:anywhere}.description{margin:0;min-height:3.2em}.channel{color:#687786;margin:14px 0 18px}.button{display:flex;align-items:center;justify-content:center;gap:10px;background:#105cbd;color:white;text-decoration:none;font-size:18px;font-weight:700;padding:14px 12px;border-radius:10px}.button svg{width:23px;height:23px;flex:none}.meta{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:18px}.date{color:#63748a;font-size:14px;margin:4px 0 20px}.disclosures{border-top:1px solid #dce5ef}details+details{border-top:1px solid #dce5ef}summary{list-style:none;cursor:pointer;padding:17px 0;display:flex;align-items:center;justify-content:space-between;gap:12px}summary::-webkit-details-marker{display:none}summary:after{content:"›";font-size:26px;line-height:1;color:#8a97a5;transition:transform .15s}details[open]>summary:after{transform:rotate(90deg)}details p{font-size:14px;margin:0 0 16px;color:#526a83}details:last-child:not([open]) summary{padding-bottom:0}code{overflow-wrap:anywhere;font-size:12px}
+h2{font-size:23px;margin:28px 0 16px}p{margin:12px 0}a{color:#105cbd;text-underline-offset:3px}a:focus-visible,summary:focus-visible{outline:3px solid #38bdf8;outline-offset:4px}.release{border-radius:14px;padding:20px;margin:14px 0}.release>div:first-child{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 16px}.release strong{overflow-wrap:anywhere}.release p{font-size:15px}.links{display:flex;gap:10px 18px;flex-wrap:wrap;font-size:14px;margin:14px 0 10px}time,small{color:#63748a;font-size:13px}footer{text-align:center;font-size:13px;color:#63748a;margin-top:28px}
+@media(max-width:480px){main{padding:24px 16px 40px}.hero{padding:24px 20px}.app-nav{padding:0 24px;gap:30px}.app-nav a{font-size:18px}h1{font-size:30px}}
+@media(prefers-reduced-motion:reduce){summary:after{transition:none}}
+</style>
+</head>
+<body>
+<header><nav class="app-nav" aria-label="选择 App">{{APP_NAVIGATION}}</nav></header>
+<main>
+<section class="hero" aria-labelledby="title">
+<div class="identity">
+{{APP_ICON}}
+<h1 id="title">{{APP_NAME}}</h1>
+<p class="description">{{DESCRIPTION}}</p>
+<p class="channel">Android 内测版</p>
+</div>
+<a class="button" href="{{LATEST_APK}}" download="{{APK_NAME}}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg>下载 Android APK</a>
+<div class="meta"><strong>{{DISPLAY_VERSION}}</strong><span>{{SIZE}}</span></div>
+<p class="date">更新于 {{DATE}}</p>
+<div class="disclosures">
+<details><summary>安装与更新</summary>
+<p>用 Android 手机浏览器打开本页，下载后点开 APK。首次安装时，按系统提示允许该浏览器安装应用。</p>
+<p>相同包名、相同签名且版本号符合要求时可覆盖更新，无需卸载。历史版本通常不能覆盖安装到较新版本之上。</p>
+<p>这是供受邀测试使用的内测安装包，尚未上架应用商店。</p>
+</details>
+<details><summary>校验下载文件</summary><p><code>{{SHA256}}</code></p><p>上面是当前版本 APK 的 SHA-256。</p></details>
+</div>
+</section>
+<h2>版本记录</h2>
+{{RELEASES}}
+<footer>仅提供安装包和版本信息</footer>
+</main>
+</body>
+</html>
