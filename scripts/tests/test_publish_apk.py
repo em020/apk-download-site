@@ -44,6 +44,19 @@ class ImportTests(unittest.TestCase):
         return publishing.register_app(self.state, 'third-app', self.package, self.certificate,
                                        ['android.permission.INTERNET'])
 
+    def test_bundle_accepts_large_apk_up_to_500_mib_and_rejects_next_byte(self):
+        apk = self.bundle / 'App.apk'
+        # Sparse files exercise the real stat-based boundary without allocating
+        # hundreds of megabytes of test data or invoking Android signing tools.
+        for size in (128 * 1024 * 1024 + 1, 500 * 1024 * 1024):
+            with self.subTest(size=size), apk.open('r+b') as artifact:
+                artifact.truncate(size)
+                self.assertEqual(publishing.validate_bundle(self.bundle), self.manifest)
+        with apk.open('r+b') as artifact:
+            artifact.truncate(500 * 1024 * 1024 + 1)
+        with self.assertRaisesRegex(ValueError, 'oversized bundle file: App.apk'):
+            publishing.validate_bundle(self.bundle)
+
     def test_first_app_uses_same_catalog_and_protocol_as_update(self):
         with patch.object(publishing, 'inspect_apk', side_effect=self.inspect):
             with self.assertRaisesRegex(ValueError, 'not registered'):

@@ -8,7 +8,7 @@
 
 | 文件 | 内容 |
 | --- | --- |
-| `App.apk` | 已签名的 Android APK，最大 128 MiB |
+| `App.apk` | 已签名的 Android APK，最大 500 MiB（524,288,000 字节） |
 | `icon.svg` | 与此版本对应的静态 SVG，最大 256 KiB。使用独立图形，不带脚本或外部资源 |
 | `manifest.json` | UTF-8 发布清单，最大 64 KiB |
 
@@ -91,6 +91,9 @@ restrict,command="/absolute/path/to/python3 /absolute/path/to/scripts/publish-ss
 ```
 
 自定义站点目录或 SDK 时，在固定命令中加上 `--state-dir` 或 `--sdk`，在固定命令里用单引号包住包含空格的路径。开发者只发 `publish-v1` 和 ZIP 内容。强制命令按公钥绑定的 App 检查清单，SSH key 不提供交互式 shell 或文件浏览。通过可信方式核对发布机的 SSH host key，并通过内网或 VPN 连接。
+
+SSH ZIP 的总大小上限由 APK、图标和清单各自上限加上 1 MiB ZIP 开销组成。
+500 MiB APK 通过本机目录提交和 SSH 发布时使用相同的校验上限。
 
 两种提交方式都返回一行 JSON：
 

@@ -17,7 +17,7 @@ from xml.etree import ElementTree
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_STATE = Path.home() / 'Library/Application Support/ShadowingGems/distribution'
 DEFAULT_SDK = Path.home() / 'Library/Android/sdk'
-MAX_APK_BYTES = 128 * 1024 * 1024
+MAX_APK_BYTES = 500 * 1024 * 1024
 MAX_ICON_BYTES = 256 * 1024
 MAX_MANIFEST_BYTES = 64 * 1024
 BUNDLE_FILES = frozenset(('App.apk', 'icon.svg', 'manifest.json'))
