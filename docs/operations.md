@@ -14,6 +14,12 @@ python3 scripts/download_service.py install --state-dir "$site_state"
 
 安装命令先检查候选 Nginx 配置，再启用 LaunchAgent。默认状态目录和 LaunchAgent 沿用早期版本的命名，部署其他状态目录时请给各命令传入相同的 `--state-dir`。同一 Mac 用户下的安装命令管理同一个 LaunchAgent。Mac 在线且用户已登录时，LaunchAgent 会维护源站运行。
 
+2026-11-11安装恢复修正：对于同一Nginx可执行文件、state路径、端口和LaunchAgent定义，
+重复`install`只校验并reload配置，不bootout/bootstrap运行中的服务。确需重新登记LaunchAgent时，
+仅对launchd短暂的exit5进行最多5次有界重试（总等待约3.7秒）；其他错误立即返回，持续错误明确
+报告。重配置无法启动时尝试恢复之前的配置和LaunchAgent定义。对应回归测试使用临时目录与
+mock launchctl，不操作生产服务；此前一次真实bootout/bootstrap间隙的exit5已由独立start恢复。
+
 有反向代理时，可参考 [HTTP 网关示例](../distribution/nginx-gateway.conf) 或 [HTTPS 网关示例](../distribution/nginx-proxy.example.conf)，将示例的上游地址换成源站的私网地址。示例中的尾部斜线会让网关在转发时去掉 `/android/` 前缀。应用页面和 APK 继续使用相对链接。源站允许回环和私网访问，远程发布走独立的 SSH 入口。
 
 ## 日常发布

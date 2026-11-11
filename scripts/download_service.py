@@ -7,6 +7,7 @@ import plistlib
 import shutil
 import subprocess
 import sys
+import time
 from urllib.request import ProxyHandler, build_opener
 
 from publishing import DEFAULT_STATE, atomic_text
@@ -87,6 +88,36 @@ def service_loaded():
                           capture_output=True).returncode == 0
 
 
+def bootstrap():
+    """launchd can briefly retain a just-booted-out job; retry only that exit code."""
+    for attempt, delay in enumerate((0.2, 0.5, 1.0, 2.0, None)):
+        try:
+            subprocess.run(["launchctl", "bootstrap", DOMAIN, str(PLIST)], check=True,
+                           capture_output=True, text=True)
+            return
+        except subprocess.CalledProcessError as error:
+            if error.returncode != 5 or delay is None:
+                detail = (error.stderr or '').strip()
+                raise RuntimeError('launchctl bootstrap failed after ' + str(attempt + 1) +
+                                   ' attempt(s)' + (': ' + detail if detail else '')) from None
+            time.sleep(delay)
+
+
+def check_port_available(port):
+    import socket
+    with socket.socket() as probe:
+        probe.bind(("0.0.0.0", port))
+
+
+def launch_definition(nginx, runtime, config):
+    return {
+        "Label": LABEL, "ProgramArguments": [nginx, "-p", str(runtime) + "/", "-c", str(config)],
+        "WorkingDirectory": str(runtime), "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 10,
+        "StandardOutPath": str(runtime / "launchd.stdout.log"),
+        "StandardErrorPath": str(runtime / "launchd.stderr.log"), "ProcessType": "Background",
+    }
+
+
 def install(state, port):
     if not (state / "current/index.html").is_file():
         raise RuntimeError("Publish the first APK with scripts/publish-apk.py before installing the service.")
@@ -102,25 +133,44 @@ def install(state, port):
     atomic_text(candidate, nginx_config(state, port))
     prefix = str(runtime) + "/"
     subprocess.run([nginx, "-p", prefix, "-c", str(candidate), "-t"], check=True)
-    # Detect a conflicting server before touching any existing managed service.
-    if not service_loaded():
-        import socket
-        with socket.socket() as probe:
-            probe.bind(("0.0.0.0", port))
+    loaded = service_loaded()
+    previous_config = config.read_bytes() if config.is_file() else None
+    previous_plist = PLIST.read_bytes() if PLIST.is_file() else None
+    definition = launch_definition(nginx, runtime, config)
+    previous_definition = plistlib.loads(previous_plist) if previous_plist is not None else None
+    same_port = previous_config is not None and f'listen 0.0.0.0:{port};'.encode() in previous_config
+    # Updating routes for the same managed instance needs no launchd restart.
+    if loaded and previous_definition == definition and same_port:
+        os.replace(candidate, config)
+        try:
+            subprocess.run([nginx, "-p", prefix, "-c", str(config), "-s", "reload"], check=True)
+        except subprocess.CalledProcessError:
+            atomic_text(config, previous_config.decode())
+            raise
+        print(f"Reloaded {LABEL}; kept the existing LaunchAgent and running Nginx master.")
+        print(f"Origin: http://localhost:{port}/\nConfig: {config}\nLaunchAgent: {PLIST}")
+        return
+    # Detect conflicts before stopping an old instance on another port/path.
+    if not loaded or not same_port:
+        check_port_available(port)
     os.replace(candidate, config)
-    arguments = [nginx, "-p", prefix, "-c", str(config)]
-    definition = {
-        "Label": LABEL, "ProgramArguments": arguments, "WorkingDirectory": str(runtime),
-        "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 10,
-        "StandardOutPath": str(runtime / "launchd.stdout.log"),
-        "StandardErrorPath": str(runtime / "launchd.stderr.log"),
-        "ProcessType": "Background",
-    }
     PLIST.parent.mkdir(exist_ok=True)
-    if service_loaded():
+    if loaded:
         subprocess.run(["launchctl", "bootout", f"{DOMAIN}/{LABEL}"], check=True)
     atomic_text(PLIST, plistlib.dumps(definition).decode())
-    subprocess.run(["launchctl", "bootstrap", DOMAIN, str(PLIST)], check=True)
+    try:
+        bootstrap()
+    except RuntimeError as failed:
+        # Restore a previously running service if a real reconfiguration cannot start.
+        if loaded and previous_plist is not None and previous_config is not None:
+            atomic_text(PLIST, plistlib.dumps(previous_definition).decode())
+            atomic_text(config, previous_config.decode())
+            try:
+                bootstrap()
+            except RuntimeError as restore_failed:
+                raise RuntimeError(str(failed) + '; previous service restore also failed: ' + str(restore_failed)) from None
+            raise RuntimeError(str(failed) + '; previous service configuration was restored') from None
+        raise
     print(f"Installed {LABEL}; starts after this Mac user logs in.")
     print(f"Origin: http://localhost:{port}/\nConfig: {config}\nLaunchAgent: {PLIST}")
 
@@ -138,7 +188,7 @@ def main():
             install(args.state_dir.expanduser().resolve(), args.port)
         elif args.action == "start":
             if not service_loaded():
-                subprocess.run(["launchctl", "bootstrap", DOMAIN, str(PLIST)], check=True)
+                bootstrap()
             else:
                 subprocess.run(["launchctl", "kickstart", f"{DOMAIN}/{LABEL}"], check=True)
         elif args.action == "stop":
