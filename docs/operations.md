@@ -116,3 +116,23 @@ python3 scripts/artifact_delivery.py --config /private/delivery.json \
 命令成功后仅输出objectKey、bytes、sha256、downloadUrl、expiresAt JSON；local模式的URL为null，
 由业务服务提供本地下载路由。临时签名URL尚未实现，后续需增加动态描述服务，不能将过期URL
 固化到静态站点。Android下载信任策略和SHA校验由各App更新器负责，服务端不下发存储凭据。
+
+## 云之家候选文件服务实测（2026-11-11，仅实验）
+
+用户指定的上传接口为`POST https://www.yunzhijia.com/docrest/doc/file/uploadfile`，
+鉴权仅在请求头`openToken`，multipart字段`file`和`bizKey=xuntong`；响应`data[0].fileId`。
+下载URL为`https://www.yunzhijia.com/docrest/file/downloadfile/<fileId>`。
+本次没有调用token兑换，也没有切换线上分发配置；令牌值未保存到源码或普通笔记。
+
+- 98,361字节合成文本、262,434字节合成ZIP、731,476字节现有TV APK均上传成功。
+  不带token/Cookie的完整下载均200、长度及SHA-256一致，未发生跳转。
+- HEAD返回正确Content-Length；首段和中途续传Range均206，Content-Range及字节正确。
+  Linux后端另对APK匿名下载与Range复测通过，单次完整GET约0.544秒（不是大文件测速结论）。
+- 实测错误If-Range仍返回206，服务端没有按该条件回退200；接入时固定fileId/版本并以
+  完整SHA-256为最终校验，不能把ETag当成完整性hash或条件请求已生效的证据。
+- 仅验证上述小文件，未确认大文件上限、保存期限、配额或长期稳定性。
+- 当前external分发按publicBaseUrl+自定义objectKey拼地址，不能直接套用云之家分配的fileId。
+  后续需要发布端provider持久保存artifactId/objectKey+SHA→fileId/downloadUrl映射，
+  匿名下载完整校验后再激活；App的download.json协议可保持不变，上传token仅留发布端。
+
+脱敏证据：任务目录`output/yunzhijia-storage-20261111/results.json`。
