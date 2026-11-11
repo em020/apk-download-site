@@ -56,3 +56,57 @@ service/                          # Nginx 配置和运行日志
 备份源码、完整运行目录和 LaunchAgent 配置。做一致性备份前暂停发布，保留符号链接和原有文件权限。恢复时优先放回原绝对路径，因为快照包含指向产物的绝对路径。启动服务前先核对登记信息、`current` 和固定版本文件，再验证源站和公开地址。
 
 应用版本需要回退时，在应用工程将回退后的内容构建成更高版本号、同签名的 APK，再重新发布。
+
+## 文件分发与对象存储迁移
+
+默认不需要额外配置：APK仍从本机源站下载。服务端同时生成版本化`download.json`描述，
+将文件身份与下载位置分开。新描述路由需要更新`download_service.py install`生成的Nginx配置；
+先备份现有配置，再按服务管理流程安装/检查。旧APK固定路径和latest别名继续实际提供文件，
+不改成旧更新器拒绝的302跳转。
+
+运营者可在**私有state目录**创建`delivery.json`，例如：
+
+```json
+{
+  "schemaVersion": 1,
+  "mode": "external",
+  "publicBaseUrl": "https://downloads.example.com/",
+  "publishCommand": ["/absolute/path/to/upload-artifact"]
+}
+```
+
+`publicBaseUrl`必须为以斜线结尾的永久HTTPS地址，不能含用户名、密码、查询签名或fragment。
+发布者仍运行原来的发版脚本。APK在外部的固定objectKey为
+`apps/<appId>/releases/<releaseId>/App.apk`；因此CDN或对象存储可直接承载相同目录结构。
+
+`publishCommand`是运营者控制的JSON argv，无shell展开。脚本追加四个参数：
+
+```text
+upload-artifact <absolute-file-path> <object-key> <sha256> <bytes>
+```
+
+命令可自行调用S3兼容SDK、云厂商CLI或现有上传程序；凭据通过运营端私有环境/凭据文件提供，
+不要把密钥放进argv或Git。命令必须按不可变key发布，不覆盖不同内容，成功退出0。stdout/stderr
+不写入公开输出；失败或一小时超时只返回通用错误，当前站点不切换。
+
+对象已预先上传时可以省略`publishCommand`。发布端会先检查远端：存在且内容匹配则复用，
+不存在才运行上传命令；不同内容直接拒绝，不能覆盖。上传后实际流式读取永久URL，核对
+完整大小和SHA-256；确认可访问后才原子激活新站点。CDN尚未传播而返回404时，本次发布失败，
+待文件可访问后原样重试。成功核验结果缓存于私有`delivery-cache/`，按URL和SHA标识。
+
+迁移已有版本时，先配置外部分发、预上传文件或提供上传命令，再运行`--refresh-site`。
+所有在用版本就绪后才切站点；下载页与新更新器直接访问CDN，旧版固定路径仍由本地兼容服务提供。
+删除配置或改为`{"schemaVersion":1,"mode":"local"}`后refresh可切回本地。保留本地APK用于兼容与恢复。
+此模式只迁移大文件下载位置，发布机和版本元数据服务仍需正常运行。
+
+通用适配器也可被整书ZIP发布流程调用，不要求文件是APK：
+
+```sh
+python3 scripts/artifact_delivery.py --config /private/delivery.json \
+  --file /private/book.zip --object-key book-packages/book-id/package-id/book.zip \
+  --sha256 '<完整SHA-256>' --bytes 12345678
+```
+
+命令成功后仅输出objectKey、bytes、sha256、downloadUrl、expiresAt JSON；local模式的URL为null，
+由业务服务提供本地下载路由。临时签名URL尚未实现，后续需增加动态描述服务，不能将过期URL
+固化到静态站点。Android下载信任策略和SHA校验由各App更新器负责，服务端不下发存储凭据。

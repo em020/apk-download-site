@@ -34,6 +34,8 @@ def verify(base, apk_name="App.apk"):
         request = Request(urljoin(base, path), method=method, headers=headers or {})
         try:
             with opener.open(request, timeout=10) as response:
+                if urlsplit(request.full_url).scheme == 'https':
+                    assert urlsplit(response.geturl()).scheme == 'https', 'External download downgraded HTTPS'
                 return response.status, response.headers, response.read()
         except HTTPError as error:
             return error.code, error.headers, error.read()
@@ -60,6 +62,17 @@ def verify(base, apk_name="App.apk"):
     assert status == 200 and body == apk, "Immutable and latest APK differ"
     status, _, body = fetch("latest/SHA256SUMS.txt")
     assert status == 200 and body.decode().startswith(metadata["sha256"])
+    descriptor_path = f"releases/{metadata['id']}/download.json"
+    status, _, body = fetch(descriptor_path)
+    assert status == 200, 'Missing download descriptor'
+    descriptor = json.loads(body)
+    assert descriptor['schemaVersion'] == 1 and descriptor['artifactId'].endswith(':' + metadata['id'])
+    assert (descriptor['sha256'], descriptor['bytes']) == (metadata['sha256'], metadata['bytes'])
+    download = urljoin(urljoin(base, descriptor_path), descriptor['downloadUrl'])
+    assert urlsplit(download).scheme == 'https' or urlsplit(download).netloc == urlsplit(base).netloc
+    status, _, downloaded = fetch(download)
+    assert status == 200 and len(downloaded) == metadata['bytes']
+    assert hashlib.sha256(downloaded).hexdigest() == metadata['sha256'], 'Download descriptor points to a different file'
     for forbidden in (".git/config", "backups/debug.keystore", "logs/", "README.md",
                       "releases/", "service/nginx.conf", "%2e%2e/backups/debug.keystore"):
         assert fetch(forbidden)[0] in (400, 403, 404), f"Unexpected exposure: {forbidden}"
@@ -68,11 +81,20 @@ def verify(base, apk_name="App.apk"):
     links = Links()
     links.feed(page.decode())
     for link in links.urls:
-        assert not link.startswith("/") and not urlsplit(link).scheme, "Nonportable page link"
+        validate_page_link(link)
         assert fetch(link)[0] == 200, f"Broken page link: {link}"
     print(f"PASS {base}: page, all {len(links.urls)} links, APK SHA-256/MIME, HEAD, Range,")
-    print("immutable/latest identity, no-cache, private-path denial and write rejection.")
+    print("immutable/latest identity, delivery descriptor/hash, no-cache, private-path denial and write rejection.")
     print("Release:", metadata["id"])
+
+
+def validate_page_link(link):
+    parsed = urlsplit(link)
+    if parsed.scheme:
+        assert (parsed.scheme == 'https' and parsed.hostname and parsed.username is None and
+                parsed.password is None and not parsed.fragment), 'External download links must be HTTPS'
+    else:
+        assert not link.startswith('/') and not parsed.netloc, 'Nonportable page link'
 
 
 if __name__ == "__main__":

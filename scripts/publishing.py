@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import uuid
 from xml.etree import ElementTree
+from artifact_delivery import deliver, load_config
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_STATE = Path.home() / 'Library/Application Support/ShadowingGems/distribution'
@@ -99,17 +100,19 @@ def read_icon(path):
     return data
 
 
-def render_page(catalog, template, *, apk_name, navigation, app_name, description, icon, prefix=""):
+def render_page(catalog, template, *, apk_name, navigation, app_name, description, icon, prefix="", download_urls=None):
     newest = catalog[0]
     escape = lambda value: html.escape(str(value), quote=True)
     entries = []
+    download_urls = download_urls or {}
     for item in catalog:
         release_path = prefix + "releases/" + escape(item["id"]) + "/"
+        download = escape(download_urls.get(item['id']) or (prefix + 'releases/' + item['id'] + '/' + apk_name))
         entries.append(
             '<article class="release"><div><strong>' + escape(item["versionName"]) +
             '</strong><time>' + escape(item["publishedAt"]) + '</time></div><p>' +
             escape(item["notes"]).replace("\n", "<br>") + '</p><div class="links"><a href="' +
-            release_path + apk_name + '">下载此版本</a><a href="' + release_path +
+            download + '">下载此版本</a><a href="' + release_path +
             'release.json">版本信息</a><a href="' + release_path +
             'SHA256SUMS.txt">SHA-256 校验</a></div><small>' +
             ('Commit ' if item.get('commit') else 'SHA-256 ') +
@@ -124,7 +127,8 @@ def render_page(catalog, template, *, apk_name, navigation, app_name, descriptio
               "RELEASES": "\n".join(entries),
               "SHA256": escape(newest["sha256"]),
               # Immutable link means an already-open page keeps its matching APK.
-              "LATEST_APK": prefix + "releases/" + escape(newest["id"]) + "/" + apk_name}
+              "LATEST_APK": escape(download_urls.get(newest['id']) or
+                                   (prefix + 'releases/' + newest['id'] + '/' + apk_name))}
     return re.sub(r"\{\{([A-Z_0-9]+)\}\}", lambda match: values[match[1]], template)
 
 
@@ -219,6 +223,20 @@ def activate_site(state, registry, apps):
     template = (REPO / 'distribution/index.html').read_text()
     by_id = {app['slug']: app for app in apps}
     default = by_id.get(registry['defaultApp'], apps[0])
+    config = load_config(state / 'delivery.json')
+    downloads = {}
+    for app in apps:
+        slug = app['slug']
+        downloads[slug] = {}
+        for release in app['releases']:
+            identifier = release['id']
+            if not RELEASE_ID.fullmatch(identifier):
+                raise ValueError('Invalid release ID')
+            if config['mode'] == 'external':
+                delivered = deliver(config, state / 'app-releases' / slug / identifier / 'App.apk',
+                                    f'apps/{slug}/releases/{identifier}/App.apk',
+                                    release['sha256'], release['bytes'], cache=state / 'delivery-cache')
+                downloads[slug][identifier] = delivered['downloadUrl']
     sites = state / 'sites'
     sites.mkdir(exist_ok=True)
     site = sites / ('catalog-' + uuid.uuid4().hex)
@@ -234,9 +252,15 @@ def activate_site(state, registry, apps):
         directory.mkdir(parents=True)
         artifacts = state / 'app-releases' / slug
         latest = artifacts / app['releases'][0]['id']
-        (directory / 'latest').symlink_to(latest, target_is_directory=True)
-        (directory / 'releases').symlink_to(artifacts, target_is_directory=True)
-        (directory / 'releases.json').write_text(json_text(app['releases']))
+        for release in app['releases']:
+            target = directory / 'releases' / release['id']
+            target.mkdir(parents=True)
+            for name in ('App.apk', 'release.json', 'SHA256SUMS.txt'):
+                (target / name).symlink_to(artifacts / release['id'] / name)
+            descriptor = download_descriptor(slug, release, downloads[slug].get(release['id']))
+            (target / 'download.json').write_text(json_text(descriptor))
+        (directory / 'latest').symlink_to(Path('releases') / app['releases'][0]['id'], target_is_directory=True)
+        (directory / 'releases.json').write_text(json_text(catalog_with_downloads(app['releases'])))
         icon = latest / 'icon.svg'
         if not icon.is_file():
             icon = state / 'legacy-icons' / (slug + '.svg')
@@ -245,7 +269,8 @@ def activate_site(state, registry, apps):
         (directory / 'index.html').write_text(render_page(
             app['releases'], template, apk_name='App.apk',
             navigation=navigation_links(apps, slug, '../../'), app_name=app['name'],
-            description=app['description'], icon='icon.svg' if icon.is_file() else None))
+            description=app['description'], icon='icon.svg' if icon.is_file() else None,
+            download_urls=downloads[slug]))
 
     # Legacy root URLs are a projection of one registered app, configured by the operator.
     alias = registry.get('rootAlias', {'appId': default['slug'], 'apkName': 'App.apk'})
@@ -259,8 +284,10 @@ def activate_site(state, registry, apps):
             (target / alias['apkName']).symlink_to(artifacts / 'App.apk')
             (target / 'release.json').symlink_to(artifacts / 'release.json')
             (target / 'SHA256SUMS.txt').write_text(release['sha256'] + '  ' + alias['apkName'] + '\n')
+            (target / 'download.json').write_text(json_text(download_descriptor(
+                root_app['slug'], release, downloads[root_app['slug']].get(release_id), alias['apkName'])))
         (site / 'latest').symlink_to(Path('releases') / root_app['releases'][0]['id'], target_is_directory=True)
-        (site / 'releases.json').write_text(json_text(root_app['releases']))
+        (site / 'releases.json').write_text(json_text(catalog_with_downloads(root_app['releases'])))
 
     default_slug = default['slug']
     default_icon = site / 'apps' / default_slug / 'icon.svg'
@@ -271,13 +298,23 @@ def activate_site(state, registry, apps):
         default['releases'], template, apk_name=alias['apkName'] if uses_alias else 'App.apk',
         navigation=navigation_links(apps, default_slug, ''), app_name=default['name'],
         description=default['description'], icon='icon.svg' if default_icon.is_file() else None,
-        prefix='' if uses_alias else 'apps/' + default_slug + '/'))
+        prefix='' if uses_alias else 'apps/' + default_slug + '/', download_urls=downloads[default_slug]))
     pointer = state / ('.current-' + uuid.uuid4().hex)
     try:
         pointer.symlink_to(site, target_is_directory=True)
         os.replace(pointer, state / 'current')
     finally:
         pointer.unlink(missing_ok=True)
+
+
+def download_descriptor(slug, release, url=None, local_name='App.apk'):
+    return {'schemaVersion': 1, 'artifactId': f"apk:{slug}:{release['id']}",
+            'bytes': release['bytes'], 'sha256': release['sha256'],
+            'downloadUrl': url or local_name, 'expiresAt': None}
+
+
+def catalog_with_downloads(releases):
+    return [dict(release, downloadInfoUrl=f"releases/{release['id']}/download.json") for release in releases]
 
 
 def refresh_site(state):
@@ -318,9 +355,11 @@ def validate_bundle(bundle):
 def result(status, slug, release):
     prefix = 'apps/' + slug + '/'
     return {'status': status, 'appId': slug, 'releaseId': release['id'],
+            'artifactId': f"apk:{slug}:{release['id']}",
             'versionCode': release['versionCode'], 'versionName': release['versionName'],
             'sha256': release['sha256'], 'pagePath': prefix,
-            'downloadPath': prefix + 'releases/' + release['id'] + '/App.apk'}
+            'downloadPath': prefix + 'releases/' + release['id'] + '/App.apk',
+            'downloadInfoPath': prefix + 'releases/' + release['id'] + '/download.json'}
 
 
 def bundle_matches(directory, manifest, icon, metadata):

@@ -121,15 +121,35 @@ SSH ZIP 的总大小上限由 APK、图标和清单各自上限加上 1 MiB ZIP 
 - `apps.json` 列出已发布的应用。
 - `apps/<appId>/` 是应用下载页，`apps/<appId>/icon.svg` 是当前图标。
 - `apps/<appId>/releases.json` 是版本记录。
+- 每条版本记录包含相对应用下载页的`downloadInfoUrl`，例如`releases/v42-0123456789ab/download.json`。
+- `apps/<appId>/releases/<releaseId>/download.json`是文件下载描述；客户端应在实际下载前读取它。
 - `apps/<appId>/latest/App.apk` 指向最新版。
 - 返回的 `downloadPath` 是固定版本地址，下载后可以对照 `sha256`。
 
 运营者可运行 `python3 scripts/verify-downloads.py <应用下载页URL> --apk-name App.apk`，检查页面、历史链接和 APK 校验。对既有根路径的兼容下载页，`--apk-name` 使用配置中对应的 APK 文件名。
 
-## 后续分发设计约束（2026-11-11，尚未实施）
+## 可迁移文件分发（2026-11-11）
 
 用户要求下载站与应用内APK更新均可迁移到第三方对象存储/CDN，并与整书ZIP下载采用
-相同的文件分发约定。以下为后续实现约束，不是当前publish-v1已经支持的字段或命令。
+相同的文件分发约定。当前实现默认使用本地文件，也支持运营者配置的永久HTTPS对象地址；
+没有配置真实对象存储账号，也尚未提供临时签名URL服务。`expiresAt`目前始终为null。
+
+下载描述示例：
+
+```json
+{
+  "schemaVersion": 1,
+  "artifactId": "apk:example-app:v42-0123456789ab",
+  "bytes": 12345678,
+  "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "downloadUrl": "App.apk",
+  "expiresAt": null
+}
+```
+
+本地`downloadUrl`相对于本次`download.json`的URL解析，保留`/android/`部署前缀；外部分发
+返回绝对HTTPS地址。客户端必须核对artifactId、bytes和sha256是否匹配选择的版本，并在下载后
+校验完整SHA-256；下载地址变化不改变APK版本。相对地址必须以描述文件URL为基准，不能以页面为基准。
 
 - 发布者继续提交原来的已签名APK、图标和manifest；下载站保持包名、证书、版本、发布权限
   校验。存储后端由运营端选择，发布者无需为每个存储厂商改构建流程。
@@ -137,10 +157,13 @@ SSH ZIP 的总大小上限由 APK、图标和清单各自上限加上 1 MiB ZIP 
   保存本地文件或上传对象存储；完成后才原子发布版本记录。位置变化不创建新APK版本。
 - 下载描述按需返回schemaVersion、artifactId、bytes、sha256、downloadUrl、expiresAt。
   静态catalog与历史发布记录保留稳定文件身份/描述入口，不固化会过期的签名URL。
-- 下载页使用稳定链接取得新地址后跳转到对象存储/CDN；新应用更新器从受信服务取得描述并
+- 当前下载页在外部模式直接链接永久对象存储/CDN地址；新应用更新器从受信服务取得描述并
   直接下载。迁移后的大文件流量不再经过自建下载源站或NG；业务元数据仍可由当前服务提供。
 - 客户端只使用HTTP(S)，不持有对象存储密钥/SDK。按固定文件身份刷新过期URL和恢复下载，
   最终校验完整SHA-256；ETag不作为内容hash。下载地址与跳转策略需受控且不绕过TLS验证。
 - 保留现有固定下载路径与兼容别名；已发布旧TV壳写死BASE并拒绝跳转，不能仅改成302便
   宣称兼容。旧路径必要时保留原有服务/反代，新客户端支持新协议后才可无APK变更切换存储。
 - 具体绘本资源包方案由同级Web工程`docs/picturebooks/architecture.md`末节维护。
+
+运营端配置与外部发布命令约定见[运维手册](operations.md#文件分发与对象存储迁移)。发布包输入
+仍是三个原文件；publish-v1原有返回字段保留，额外返回artifactId和downloadInfoPath。

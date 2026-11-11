@@ -71,9 +71,9 @@ http {{
         location = /apps.json {{ try_files $uri =404; }}
         location ~ "^/apps/[a-z][a-z0-9-]{{0,39}}/$" {{ try_files $uri/index.html =404; }}
         location ~ "^/apps/[a-z][a-z0-9-]{{0,39}}/(index[.]html|releases[.]json|icon[.]svg)$" {{ try_files $uri =404; }}
-        location ~ "^/apps/[a-z][a-z0-9-]{{0,39}}/(latest|releases/[a-zA-Z0-9.-]+)/(App[.]apk|release[.]json|SHA256SUMS[.]txt)$" {{ try_files $uri =404; }}
+        location ~ "^/apps/[a-z][a-z0-9-]{{0,39}}/(latest|releases/[a-zA-Z0-9.-]+)/(App[.]apk|release[.]json|download[.]json|SHA256SUMS[.]txt)$" {{ try_files $uri =404; }}
         location = /releases.json {{ try_files $uri =404; }}
-        location ~ ^/(latest|releases/[a-zA-Z0-9.-]+)/([a-zA-Z0-9_-]+[.]apk|release[.]json|SHA256SUMS[.]txt)$ {{
+        location ~ ^/(latest|releases/[a-zA-Z0-9.-]+)/([a-zA-Z0-9_-]+[.]apk|release[.]json|download[.]json|SHA256SUMS[.]txt)$ {{
             try_files $uri =404;
         }}
         location / {{ return 404; }}
