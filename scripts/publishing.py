@@ -1,5 +1,7 @@
 """Versioned Android APK publishing protocol and catalog activation."""
 from contextlib import contextmanager
+import base64
+import struct
 from datetime import datetime, timezone
 import fcntl
 import hashlib
@@ -89,14 +91,29 @@ def read_icon(path):
         raise ValueError('App icon is not valid SVG') from error
     namespace = '{http://www.w3.org/2000/svg}'
     elements = {namespace + name for name in ('svg', 'g', 'path', 'rect', 'circle', 'ellipse',
-                                               'line', 'polygon', 'polyline', 'title', 'desc')}
+                                               'line', 'polygon', 'polyline', 'title', 'desc', 'image')}
     attributes = {'viewBox', 'width', 'height', 'd', 'fill', 'fill-rule', 'stroke', 'stroke-width',
                   'stroke-linecap', 'stroke-linejoin', 'transform', 'opacity', 'fill-opacity',
                   'stroke-opacity', 'x', 'y', 'x1', 'x2', 'y1', 'y2', 'rx', 'ry', 'cx', 'cy', 'r', 'points'}
-    if root.tag != namespace + 'svg' or any(
-            node.tag not in elements or not node.attrib.keys() <= attributes or
-            any('url' in value.lower() for value in node.attrib.values()) for node in root.iter()):
-        raise ValueError('App icon must be a self-contained SVG with static shapes')
+    if root.tag != namespace + 'svg':
+        raise ValueError('App icon must be a self-contained SVG')
+    for node in root.iter():
+        if node.tag == namespace + 'image':
+            if not node.attrib.keys() <= {'href', 'x', 'y', 'width', 'height'}:
+                raise ValueError('Embedded icon image has unsupported attributes')
+            href = node.get('href', '')
+            if not href.startswith('data:image/png;base64,'):
+                raise ValueError('Icon images must be embedded PNG data')
+            try:
+                png = base64.b64decode(href.split(',', 1)[1], validate=True)
+            except ValueError:
+                raise ValueError('Invalid embedded PNG') from None
+            if (len(png) < 33 or png[:8] != b'\x89PNG\r\n\x1a\n' or png[12:16] != b'IHDR'
+                    or not all(0 < n <= 1024 for n in struct.unpack('>II', png[16:24]))):
+                raise ValueError('Embedded PNG must have valid dimensions within 1024 pixels')
+        elif (node.tag not in elements or not node.attrib.keys() <= attributes
+                or any('url' in value.lower() for value in node.attrib.values())):
+            raise ValueError('App icon must be a self-contained SVG with static shapes or embedded PNG')
     return data
 
 

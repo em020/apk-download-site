@@ -9,7 +9,7 @@
 | 文件 | 内容 |
 | --- | --- |
 | `App.apk` | 已签名的 Android APK，最大 500 MiB（524,288,000 字节） |
-| `icon.svg` | 与此版本对应的静态 SVG，最大 256 KiB。使用独立图形，不带脚本或外部资源 |
+| `icon.svg` | 与此版本对应的静态 SVG，最大 256 KiB。使用静态图形或内嵌PNG，不带脚本或外部资源；内嵌PNG采用data:image/png;base64，尺寸不超过1024×1024 |
 | `manifest.json` | UTF-8 发布清单，最大 64 KiB |
 
 清单示例：
