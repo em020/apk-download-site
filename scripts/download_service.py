@@ -65,7 +65,7 @@ http {{
         add_header X-Frame-Options DENY always;
         add_header Referrer-Policy no-referrer always;
         add_header Cache-Control "no-store" always;
-        add_header Content-Security-Policy "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'self'; frame-ancestors 'none'" always;
+        add_header Content-Security-Policy "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; base-uri 'self'; frame-ancestors 'none'" always;
         location = / {{ try_files /index.html =404; }}
         location = /index.html {{ try_files $uri =404; }}
         location = /icon.svg {{ try_files $uri =404; }}
